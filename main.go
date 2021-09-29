@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/osteele/liquid"
+	"github.com/xuri/excelize/v2"
 )
 
 //go:embed template.html
@@ -23,8 +24,9 @@ var (
 
 var outputPath = fmt.Sprintf("%s/Desktop/email-output", os.Getenv("HOME"))
 
-var validFileExtensions = []string{
-	"csv",
+var validFileExtensions = map[string]func(filename string) (rows []row, err error){
+	"csv":  loadCSV,
+	"xlsx": loadXLSX,
 }
 
 func init() {
@@ -53,31 +55,23 @@ type row struct {
 }
 
 func main() {
-	rows, err := loadCSV(*filename)
-	if err != nil {
-		panic(err)
-	}
-	generateOutput(rows)
-}
-
-func loadCSV(fileName string) (rows []row, err error) {
-	fileNameInfo := strings.Split(fileName, ".")
+	fileNameInfo := strings.Split(*filename, ".")
 	fileExtension := fileNameInfo[len(fileNameInfo)-1]
 
-	foundFileExtension := false
-	for _, validFileExtension := range validFileExtensions {
-		if fileExtension == validFileExtension {
-			foundFileExtension = true
-			break
-		} else {
-			continue
+	if handler, ok := validFileExtensions[fileExtension]; ok {
+		rows, err := handler(*filename)
+		if err != nil {
+			panic(err)
 		}
+		generateOutput(rows)
+	} else {
+		panic(fmt.Errorf("extensão de arquivo inválida: %s", fileExtension))
 	}
-	if !foundFileExtension {
-		return nil, fmt.Errorf("extensão de arquivo inválida: %s", fileExtension)
-	}
+}
 
-	file, err := os.Open(fileName)
+func loadCSV(filename string) (rows []row, err error) {
+
+	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao abrir arquivo: %s", err)
 	}
@@ -86,6 +80,30 @@ func loadCSV(fileName string) (rows []row, err error) {
 	records, err := csvReader.ReadAll()
 
 	for _, line := range records[1:] {
+		row, err := validateRow(line)
+		if err != nil {
+			return nil, err
+		}
+
+		rows = append(rows, row)
+	}
+
+	return rows, nil
+}
+
+func loadXLSX(filename string) (rows []row, err error) {
+
+	file, err := excelize.OpenFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	lines, err := file.GetRows("Sheet1")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, line := range lines {
 		row, err := validateRow(line)
 		if err != nil {
 			return nil, err
@@ -124,6 +142,8 @@ func validateRow(record []string) (row row, err error) {
 		return row, fmt.Errorf("link do boleto não informado na linha: %d", lineNum+1)
 	}
 	row.BankSlip = record[4]
+
+	lineNum++
 	return
 }
 
