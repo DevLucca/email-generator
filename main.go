@@ -98,9 +98,10 @@ func loadXLSX(filename string) (rows []row, err error) {
 		return nil, err
 	}
 
-	lines, err := file.GetRows("Report")
+	lines, err := file.GetRows("Sheet1")
 	if err != nil {
-		return nil, err
+		fmt.Println(err)
+		return
 	}
 	for _, line := range lines[1:] {
 		row, err := validateRow(line)
